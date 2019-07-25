@@ -1,7 +1,7 @@
 import setuptools
 
 setuptools.setup(
-    name='celery_events',
+    name='celery-events',
     version='0.0.1',
     author='Shao Fei',
     author_email='shaofei330@gmail.com',
