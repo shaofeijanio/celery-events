@@ -31,8 +31,6 @@ class BackendModel:
 class Event(BackendModel):
     """Event."""
 
-    broadcast_task_queue = 'events_broadcast'
-
     def __init__(self, app_name, event_name, kwarg_keys=None):
         super().__init__()
         self.app_name = app_name
@@ -81,7 +79,7 @@ class Event(BackendModel):
         if now:
             broadcast_task.run(**run_task_kwargs)
         else:
-            broadcast_task.apply_async(kwargs=run_task_kwargs, queue=self.broadcast_task_queue)
+            broadcast_task.apply_async(kwargs=run_task_kwargs, queue=self.get_broadcast_queue())
 
     def add_task(self, task):
         if task not in self.tasks:
@@ -95,11 +93,12 @@ class Event(BackendModel):
     def add_c_task(self, c_task, queue=None):
         return self._get_or_create_task(c_task.name, queue)
 
+    def get_broadcast_queue(self):
+        return 'events_broadcast'
+
 
 class Task(BackendModel):
     """Task for an event."""
-
-    task_name_queue = {}
 
     def __init__(self, name, queue=None):
         super().__init__()
@@ -117,9 +116,12 @@ class Task(BackendModel):
 
     def _get_queue(self, name, queue):
         if queue is None:
-            return self.task_name_queue.get(name)
+            return self.get_task_name_queue(name)
         else:
             return queue
+
+    def get_task_name_queue(self, task_name):
+        return None
 
 
 class Registry:
@@ -128,11 +130,17 @@ class Registry:
         self.events = []
 
     # Configuration methods #
-    def set_broadcast_task_queue(self, queue):
-        Event.broadcast_task_queue = queue
+    def set_get_broadcast_queue(self, get_broadcast_queue):
+        def _get_broadcast_queue(_self):
+            return get_broadcast_queue()
 
-    def set_task_name_queue(self, task_name_queue):
-        Task.task_name_queue = task_name_queue
+        Event.get_broadcast_queue = _get_broadcast_queue
+
+    def set_get_task_name_queue(self, get_task_name_queue):
+        def _get_task_name_queue(_self, task_name):
+            return get_task_name_queue(task_name)
+
+        Task.get_task_name_queue = _get_task_name_queue
 
     # Event management methods #
     @property

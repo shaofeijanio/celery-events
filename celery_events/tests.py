@@ -153,15 +153,15 @@ class TaskTestCase(TestCase):
         task = Task('task', queue='queue')
         self.assertEqual('queue', task.queue)
 
-    def test_use_configured_queue_no_configuration(self):
+    def test_no_override_get_name_queue(self):
         task = Task('task')
         self.assertIsNone(task.queue)
 
-    def test_use_configured_queue_with_configuration(self):
+    def test_override_get_name_queue(self):
         class TestTask(Task):
-            task_name_queue = {
-                'task': 'queue'
-            }
+
+            def get_task_name_queue(self, task_name):
+                return 'queue'
 
         task = TestTask('task')
         self.assertEqual('queue', task.queue)
@@ -170,18 +170,18 @@ class TaskTestCase(TestCase):
 class RegistryTestCase(TestCase):
 
     def tearDown(self):
-        Event.broadcast_task_queue = 'events_broadcast'
-        Task.task_name_queue = {}
+        Event.get_broadcast_queue = lambda _self: 'events_broadcast'
+        Task.get_task_name_queue = lambda _self, task_name: None
 
-    def test_set_broadcast_task_queue(self):
+    def test_set_get_broadcast_queue(self):
         registry = Registry()
-        registry.set_broadcast_task_queue('new_queue')
-        self.assertEqual('new_queue', Event.broadcast_task_queue)
+        registry.set_get_broadcast_queue(lambda: 'new_queue')
+        self.assertEqual('new_queue', Event('app', 'event').get_broadcast_queue())
 
-    def test_set_task_name_queue(self):
+    def test_set_get_task_name_queue(self):
         registry = Registry()
-        registry.set_task_name_queue({'task': 'queue'})
-        self.assertEqual({'task': 'queue'}, Task.task_name_queue)
+        registry.set_get_task_name_queue(lambda task_name: 'queue')
+        self.assertEqual('queue', Task('task').get_task_name_queue('task'))
 
     def test_event(self):
         registry = Registry()
