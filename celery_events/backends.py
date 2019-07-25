@@ -48,6 +48,7 @@ class Backend:
 
         return tasks_to_create, tasks_to_remove, tasks_to_update
 
+    # Public methods #
     def sync_local_events(self):
         """
         Sync local events with backend.
@@ -129,6 +130,7 @@ class Backend:
 
         self.commit_changes(events_to_update=events_to_update)
 
+    # Overridable methods #
     def commit_changes(self, events_to_create=None, events_to_delete=None, events_to_update=None):
         if events_to_create is not None:
             self.create_events(events_to_create)
