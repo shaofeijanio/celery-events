@@ -11,13 +11,16 @@ def _get_backend(backend_class):
     return backend_class(registry)
 
 
+def update_local_events(backend_class):
+    backend = _get_backend(backend_class)
+    backend.update_local_events()
+
+
 def sync_local_events(backend_class):
     backend = _get_backend(backend_class)
-    if sync_local_events:
-        backend.sync_local_events()
+    backend.sync_local_events()
 
 
 def sync_remote_events(backend_class):
     backend = _get_backend(backend_class)
-    if sync_remote_events:
-        backend.sync_remote_events()
+    backend.sync_remote_events()

@@ -8,15 +8,11 @@ class Backend:
         self.local_events_from_backend = None
         self.remote_events_from_backend = None
 
-    def _set_backend_obj_for_events(self, events, events_from_backend):
-        for event in events:
-            event_from_backend = next((e for e in events_from_backend if e == event), None)
-            if event_from_backend is not None:
-                event.backend_obj = event_from_backend.backend_obj
-                for task in event.tasks:
-                    task_from_backend = next((t for t in event_from_backend.tasks if t == task), None)
-                    if task_from_backend is not None:
-                        task.backend_obj = task_from_backend.backend_obj
+    def _find_event(self, event, events):
+        return next((e for e in events if e == event), None)
+
+    def _find_task(self, task, tasks):
+        return next((t for t in tasks if t == task), None)
 
     def _fetch_events(self, for_local_events=False, for_remote_events=False):
         if for_local_events:
@@ -25,6 +21,16 @@ class Backend:
         if for_remote_events:
             self.remote_events_from_backend = set(self.fetch_events(self.remote_events))
             self._set_backend_obj_for_events(self.remote_events, self.remote_events_from_backend)
+
+    def _set_backend_obj_for_events(self, events, events_from_backend):
+        for event in events:
+            event_from_backend = self._find_event(event, events_from_backend)
+            if event_from_backend is not None:
+                event.backend_obj = event_from_backend.backend_obj
+                for task in event.tasks:
+                    task_from_backend = self._find_task(task, event_from_backend.tasks)
+                    if task_from_backend is not None:
+                        task.backend_obj = task_from_backend.backend_obj
 
     def _categorise_event_tasks(self, event, event_from_backend):
         # Consider only local tasks
@@ -41,7 +47,7 @@ class Backend:
         # Get local tasks to update
         tasks_to_update = []
         for local_task in local_tasks:
-            task_from_backend = next((task for task in local_tasks_from_backend if local_task == task), None)
+            task_from_backend = self._find_task(local_task, local_tasks_from_backend)
             # Update local task when the queue does not match
             if task_from_backend is not None and not local_task.queue == task_from_backend.queue:
                 tasks_to_update.append(local_task)
@@ -49,6 +55,27 @@ class Backend:
         return tasks_to_create, tasks_to_remove, tasks_to_update
 
     # Public methods #
+    def update_local_events(self):
+        """
+        Update local events in registry with tasks from remote.
+        """
+        if not self.local_events_from_backend:
+            self._fetch_events(for_local_events=True)
+
+        events_to_add_remote_tasks = []
+        for local_event in self.local_events:
+            event_from_backend = self._find_event(local_event, self.local_events_from_backend)
+            if event_from_backend is not None:
+                tasks_to_add = [
+                    task for task in event_from_backend.tasks
+                    if self.get_task_namespace(task) not in self.local_task_namespaces
+                ]
+                events_to_add_remote_tasks.append((local_event, tasks_to_add))
+
+        for event, tasks_to_add in events_to_add_remote_tasks:
+            for task in tasks_to_add:
+                event.add_task(task)
+
     def sync_local_events(self):
         """
         Sync local events with backend.
@@ -69,33 +96,20 @@ class Backend:
 
         # Find events to update and remote tasks
         events_to_update = []
-        events_to_add_remote_tasks = []
         for local_event in self.local_events:
-            event_from_backend = next(
-                (event for event in self.local_events_from_backend if event == local_event),
-                None
-            )
+            event_from_backend = self._find_event(local_event, self.local_events_from_backend)
             if event_from_backend is not None:
                 tasks_to_create, tasks_to_remove, tasks_to_update = self._categorise_event_tasks(
                     local_event,
                     event_from_backend
                 )
                 events_to_update.append((local_event, tasks_to_create, tasks_to_remove, tasks_to_update))
-                tasks_to_add = [
-                    task for task in event_from_backend.tasks
-                    if self.get_task_namespace(task) not in self.local_task_namespaces
-                ]
-                events_to_add_remote_tasks.append((local_event, tasks_to_add))
 
         self.commit_changes(
             events_to_create=events_to_create,
             events_to_delete=events_to_delete,
             events_to_update=events_to_update
         )
-
-        for event, tasks_to_add in events_to_add_remote_tasks:
-            for task in tasks_to_add:
-                event.add_task(task)
 
     def sync_remote_events(self):
         """
@@ -112,10 +126,7 @@ class Backend:
         # Find events to update
         events_to_update = []
         for remote_event in self.remote_events:
-            event_from_backend = next(
-                (event for event in self.remote_events_from_backend if event == remote_event),
-                None
-            )
+            event_from_backend = self._find_event(remote_event, self.remote_events_from_backend)
             if event_from_backend is not None:
                 tasks_to_create, tasks_to_remove, tasks_to_update = self._categorise_event_tasks(
                     remote_event,
