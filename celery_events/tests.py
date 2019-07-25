@@ -1,0 +1,538 @@
+import datetime
+
+from unittest import mock, TestCase
+
+from celery_events import registry
+from celery_events.backends import Backend
+from celery_events.events import Event, Task, Registry
+from celery_events.tasks import BroadcastTask
+
+
+class EventTestCase(TestCase):
+
+    def test_add_task(self):
+        event = Event('app', 'event')
+        task = Task('task')
+        event.add_task(task)
+
+        self.assertEqual([task], event.tasks)
+
+    def test_add_task_task_already_added(self):
+        event = Event('app', 'event')
+        task = event.add_task(Task('task'))
+        event.add_task(Task('task'))
+
+        self.assertEqual([task], event.tasks)
+
+    def test_add_task_name(self):
+        event = Event('app', 'event')
+        event.add_task_name('task')
+
+        self.assertEqual([Task('task')], event.tasks)
+
+    def test_add_task_name_task_already_added(self):
+        event = Event('app', 'event')
+        task = event.add_task(Task('task'))
+        event.add_task_name('task')
+
+        self.assertEqual([task], event.tasks)
+
+    def test_add_c_task(self):
+        class CTask:
+            pass
+
+        c_task = CTask()
+        c_task.name = 'task'
+        event = Event('app', 'event')
+        event.add_c_task(c_task)
+
+        self.assertEqual([Task('task')], event.tasks)
+
+    def test_add_c_task_task_already_added(self):
+        class CTask:
+            pass
+
+        c_task = CTask()
+        c_task.name = 'task'
+        event = Event('app', 'event')
+        task = event.add_task(Task('task'))
+        event.add_c_task(c_task)
+
+        self.assertEqual([task], event.tasks)
+
+    @mock.patch('celery_events.events.tasks.BroadcastTask')
+    def test_broadcast(self, mock_broadcast_task_cls):
+        mock_broadcast_task = mock.Mock()
+        mock_broadcast_task_cls.return_value = mock_broadcast_task
+
+        event = Event('app', 'event')
+        event.broadcast()
+
+        mock_broadcast_task.apply_async.assert_called_with(
+            kwargs={'app_name': 'app', 'event_name': 'event'},
+            queue='events_broadcast'
+        )
+
+    def test_broadcast_invalid_kwarg_key(self):
+        event = Event('app', 'event')
+        try:
+            event.broadcast(a=1)
+            self.fail()
+        except ValueError:
+            pass
+
+        event = Event('app', 'event', kwarg_keys=['a'])
+        try:
+            event.broadcast(b=1)
+            self.fail()
+        except ValueError:
+            pass
+
+    def test_broadcast_invalid_kwarg_type(self):
+        event = Event('app', 'event', kwarg_keys=['a'])
+        try:
+            event.broadcast(a={1, 2, 3})
+            self.fail()
+        except TypeError:
+            pass
+
+        try:
+            event.broadcast(a=(1, 2, 3))
+            self.fail()
+        except TypeError:
+            pass
+
+        try:
+            event.broadcast(a=datetime.datetime(2019, 1, 1))
+            self.fail()
+        except TypeError:
+            pass
+
+    def test_broadcast_remote_event(self):
+        event = Event.remote_instance('app', 'event')
+        try:
+            event.broadcast()
+            self.fail()
+        except RuntimeError:
+            pass
+
+    @mock.patch('celery_events.events.tasks.BroadcastTask')
+    def test_broadcast_valid_kwargs(self, mock_broadcast_task_cls):
+        mock_broadcast_task = mock.Mock()
+        mock_broadcast_task_cls.return_value = mock_broadcast_task
+
+        event = Event('app', 'event', kwarg_keys=['a', 'b'])
+
+        event.broadcast(a=1)
+        mock_broadcast_task.apply_async.assert_called_with(
+            kwargs={'app_name': 'app', 'event_name': 'event', 'a': 1},
+            queue='events_broadcast'
+        )
+
+        event.broadcast(a=1, b=2)
+        mock_broadcast_task.apply_async.assert_called_with(
+            kwargs={'app_name': 'app', 'event_name': 'event', 'a': 1, 'b': 2},
+            queue='events_broadcast'
+        )
+
+    @mock.patch('celery_events.events.tasks.BroadcastTask')
+    def test_broadcast_now(self, mock_broadcast_task_cls):
+
+        mock_broadcast_task = mock.Mock()
+        mock_broadcast_task_cls.return_value = mock_broadcast_task
+
+        event = Event('app', 'event')
+        event.broadcast(now=True)
+
+        mock_broadcast_task.run.assert_called_with(app_name='app', event_name='event')
+
+
+class TaskTestCase(TestCase):
+
+    def test_use_args_queue(self):
+        task = Task('task', queue='queue')
+        self.assertEqual('queue', task.queue)
+
+    def test_use_configured_queue_no_configuration(self):
+        task = Task('task')
+        self.assertIsNone(task.queue)
+
+    def test_use_configured_queue_with_configuration(self):
+        class TestTask(Task):
+            task_name_queue = {
+                'task': 'queue'
+            }
+
+        task = TestTask('task')
+        self.assertEqual('queue', task.queue)
+
+
+class RegistryTestCase(TestCase):
+
+    def tearDown(self):
+        Event.broadcast_task_queue = 'events_broadcast'
+        Task.task_name_queue = {}
+
+    def test_set_broadcast_task_queue(self):
+        registry = Registry()
+        registry.set_broadcast_task_queue('new_queue')
+        self.assertEqual('new_queue', Event.broadcast_task_queue)
+
+    def test_set_task_name_queue(self):
+        registry = Registry()
+        registry.set_task_name_queue({'task': 'queue'})
+        self.assertEqual({'task': 'queue'}, Task.task_name_queue)
+
+    def test_event(self):
+        registry = Registry()
+        existing_event = Event('app', 'event')
+        registry.events.append(existing_event)
+        event = registry.event('app', 'event')
+        self.assertEqual(existing_event, event)
+
+    def test_event_local_only(self):
+        registry = Registry()
+        local_event = Event.local_instance('app local', 'event')
+        remote_event = Event.remote_instance('app remote', 'event')
+        registry.events.append(local_event)
+        registry.events.append(remote_event)
+        event = registry.event('app remote', 'event', local_only=True)
+        self.assertIsNone(event)
+
+    def test_event_remote_only(self):
+        registry = Registry()
+        local_event = Event.local_instance('app local', 'event')
+        remote_event = Event.remote_instance('app remote', 'event')
+        registry.events.append(local_event)
+        registry.events.append(remote_event)
+        event = registry.event('app local', 'event', remote_only=True)
+        self.assertIsNone(event)
+
+    def test_event_no_event(self):
+        registry = Registry()
+        event = registry.event('app', 'event')
+        self.assertIsNone(event)
+
+    def test_event_no_event_raise_does_not_exist(self):
+        registry = Registry()
+        try:
+            registry.event('app', 'event', raise_does_not_exist=True)
+            self.fail()
+        except RuntimeError:
+            pass
+
+    def test_create_local_event(self):
+        registry = Registry()
+        event = registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
+        self.assertEqual(['a', 'b'], event.kwarg_keys)
+        self.assertEqual([event], registry.events)
+        self.assertFalse(event.is_remote)
+
+    def test_create_local_event_already_created(self):
+        registry = Registry()
+        registry.create_local_event('app', 'event')
+        event = registry.create_local_event('app', 'event')
+        self.assertEqual([], event.kwarg_keys)
+        self.assertEqual([event], registry.events)
+        self.assertFalse(event.is_remote)
+
+    def test_local_event(self):
+        registry = Registry()
+        existing_event = Event.local_instance('app', 'event')
+        registry.events.append(existing_event)
+        event = registry.local_event('app', 'event')
+        self.assertEqual(existing_event, event)
+        self.assertFalse(event.is_remote)
+
+    def test_local_event_no_event(self):
+        registry = Registry()
+        try:
+            event = registry.local_event('app', 'event')
+            self.fail()
+        except RuntimeError:
+            pass
+
+    def test_local_event_only_remote_event(self):
+        registry = Registry()
+        existing_event = Event.remote_instance('app', 'event')
+        registry.events.append(existing_event)
+        try:
+            event = registry.local_event('app', 'event')
+            self.fail()
+        except RuntimeError:
+            pass
+
+    def test_remote_event(self):
+        registry = Registry()
+        existing_event = Event.remote_instance('app', 'event')
+        registry.events.append(existing_event)
+        event = registry.remote_event('app', 'event')
+        self.assertEqual(existing_event, event)
+        self.assertTrue(event.is_remote)
+
+    def test_remote_event_no_event(self):
+        registry = Registry()
+        event = registry.remote_event('app', 'event')
+        expected_event = Event.remote_instance('app', 'event')
+        self.assertEqual(expected_event, event)
+        self.assertTrue(event.is_remote)
+
+    def test_remote_event_only_local_event(self):
+        registry = Registry()
+        registry.create_local_event('app', 'event')
+        event = registry.remote_event('app', 'event')
+        expected_event = Event.remote_instance('app', 'event')
+        self.assertEqual(expected_event, event)
+        self.assertTrue(event.is_remote)
+
+    def test_local_events(self):
+        registry = Registry()
+        local_event = Event.local_instance('app local', 'event')
+        remote_event = Event.remote_instance('app remote', 'event')
+        registry.events.append(local_event)
+        registry.events.append(remote_event)
+
+        self.assertEqual([local_event], registry.local_events)
+
+    def test_remote_events(self):
+        registry = Registry()
+        local_event = Event.local_instance('app local', 'event')
+        remote_event = Event.remote_instance('app remote', 'event')
+        registry.events.append(local_event)
+        registry.events.append(remote_event)
+
+        self.assertEqual([remote_event], registry.remote_events)
+
+
+class BackendTestCase(TestCase):
+
+    def setUp(self):
+        self.registry = Registry()
+        self.namespaces = ['app_1', 'app_2']
+        self.local_events_from_backend = []
+        self.remote_events_from_backend = []
+        self.deleted_events = []
+        self.created_events = []
+        self.created_tasks = []
+        self.removed_tasks = []
+        self.updated_tasks = []
+
+        test_case = self
+
+        class TestBackend(Backend):
+
+            def get_local_namespaces(self):
+                return test_case.namespaces
+
+            def get_task_namespace(self, task):
+                return task.name.split('.')[0]
+
+            def fetch_events_for_namespaces(self, app_names):
+                return test_case.local_events_from_backend
+
+            def fetch_events(self, events):
+                return [
+                    event for event in test_case.local_events_from_backend + test_case.remote_events_from_backend
+                    if event in events
+                ]
+
+            def delete_events(self, events):
+                for event in events:
+                    test_case.deleted_events.append(event)
+
+            def create_events(self, events):
+                for event in events:
+                    test_case.created_events.append(event)
+
+            def create_tasks(self, event, tasks):
+                for task in tasks:
+                    test_case.created_tasks.append((event, task))
+
+            def remove_tasks(self, event, tasks):
+                for task in tasks:
+                    test_case.removed_tasks.append((event, task))
+
+            def update_tasks(self, tasks):
+                for task in tasks:
+                    test_case.updated_tasks.append(task)
+
+        self.backend_cls = TestBackend
+
+    def test_sync_local_events_create_event(self):
+        local_event = self.registry.create_local_event('app_1', 'event_1')
+        local_event.add_task_name('task_1')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_local_events()
+
+        self.assertEqual(1, len(self.created_events))
+        created_event = self.created_events[0]
+        self.assertEqual(local_event, created_event)
+        self.assertEqual(0, len(self.created_tasks))
+        self.assertEqual(0, len(self.deleted_events))
+        self.assertEqual(0, len(self.removed_tasks))
+        self.assertEqual(0, len(self.updated_tasks))
+
+    def test_sync_local_events_delete_event(self):
+        local_event = Event.local_instance('app_1', 'event_1')
+        self.local_events_from_backend.append(local_event)
+        local_event.add_task_name('task_1')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_local_events()
+
+        self.assertEqual(0, len(self.created_events))
+        self.assertEqual(0, len(self.created_tasks))
+        self.assertEqual(1, len(self.deleted_events))
+        deleted_event = self.deleted_events[0]
+        self.assertEqual(local_event, deleted_event)
+        self.assertEqual(0, len(self.removed_tasks))
+        self.assertEqual(0, len(self.updated_tasks))
+
+    def test_sync_local_events_create_task(self):
+        local_event = self.registry.create_local_event('app_1', 'event_1')
+        self.local_events_from_backend.append(local_event)
+        local_task = local_event.add_task_name('task_1')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_local_events()
+
+        self.assertEqual(0, len(self.created_events))
+        self.assertEqual(1, len(self.created_tasks))
+        event, created_task = self.created_tasks[0]
+        self.assertEqual(local_event, event)
+        self.assertEqual(local_task, created_task)
+        self.assertEqual(0, len(self.deleted_events))
+        self.assertEqual(0, len(self.removed_tasks))
+        self.assertEqual(0, len(self.updated_tasks))
+
+    def test_sync_local_events_remove_task(self):
+        local_event = self.registry.create_local_event('app_1', 'event_1')
+        local_event_from_backend = Event.local_instance('app_1', 'event_1')
+        self.local_events_from_backend.append(local_event_from_backend)
+        local_task_from_backend = local_event_from_backend.add_task_name('app_1.task_1')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_local_events()
+
+        self.assertEqual(0, len(self.created_events))
+        self.assertEqual(0, len(self.created_tasks))
+        self.assertEqual(0, len(self.deleted_events))
+        self.assertEqual(1, len(self.removed_tasks))
+        event, removed_task = self.removed_tasks[0]
+        self.assertEqual(local_event, event)
+        self.assertEqual(local_task_from_backend, removed_task)
+        self.assertEqual(0, len(self.updated_tasks))
+
+    def test_sync_local_events_update_task(self):
+        local_event = self.registry.create_local_event('app_1', 'event_1')
+        local_event_from_backend = Event.local_instance('app_1', 'event_1')
+        self.local_events_from_backend.append(local_event_from_backend)
+        local_task = local_event.add_task_name('app_1.task_1', queue='new_queue')
+        local_event_from_backend.add_task_name('app_1.task_1', queue='old_queue')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_local_events()
+
+        self.assertEqual(0, len(self.created_events))
+        self.assertEqual(0, len(self.created_tasks))
+        self.assertEqual(0, len(self.deleted_events))
+        self.assertEqual(0, len(self.removed_tasks))
+        self.assertEqual(1, len(self.updated_tasks))
+        updated_task = self.updated_tasks[0]
+        self.assertEqual(local_task, updated_task)
+        self.assertEqual(local_task.queue, updated_task.queue)
+
+    def test_sync_remote_events_create_task(self):
+        remote_event = self.registry.remote_event('app_3', 'event_3')
+        self.remote_events_from_backend.append(remote_event)
+        local_task = remote_event.add_task_name('task_1')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_remote_events()
+
+        self.assertEqual(0, len(self.created_events))
+        self.assertEqual(1, len(self.created_tasks))
+        event, created_task = self.created_tasks[0]
+        self.assertEqual(remote_event, event)
+        self.assertEqual(local_task, created_task)
+        self.assertEqual(0, len(self.deleted_events))
+        self.assertEqual(0, len(self.removed_tasks))
+        self.assertEqual(0, len(self.updated_tasks))
+
+    def test_sync_remote_events_remove_task(self):
+        remote_event = self.registry.remote_event('app_3', 'event_3')
+        remote_event_from_backend = Event.remote_instance('app_3', 'event_3')
+        self.remote_events_from_backend.append(remote_event_from_backend)
+        local_task_from_backend = remote_event_from_backend.add_task_name('app_1.task_1')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_remote_events()
+
+        self.assertEqual(0, len(self.created_events))
+        self.assertEqual(0, len(self.created_tasks))
+        self.assertEqual(0, len(self.deleted_events))
+        self.assertEqual(1, len(self.removed_tasks))
+        event, removed_task = self.removed_tasks[0]
+        self.assertEqual(remote_event, event)
+        self.assertEqual(local_task_from_backend, removed_task)
+        self.assertEqual(0, len(self.updated_tasks))
+
+    def test_sync_remove_events_update_task(self):
+        remote_event = self.registry.remote_event('app_3', 'event_3')
+        remote_event_from_backend = Event.remote_instance('app_3', 'event_3')
+        self.remote_events_from_backend.append(remote_event_from_backend)
+        local_task = remote_event.add_task_name('app_1.task_1', queue='new_queue')
+        remote_event_from_backend.add_task_name('app_1.task_1', queue='old_queue')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_remote_events()
+
+        self.assertEqual(0, len(self.created_events))
+        self.assertEqual(0, len(self.created_tasks))
+        self.assertEqual(0, len(self.deleted_events))
+        self.assertEqual(0, len(self.removed_tasks))
+        self.assertEqual(1, len(self.updated_tasks))
+        updated_task = self.updated_tasks[0]
+        self.assertEqual(local_task, updated_task)
+        self.assertEqual(local_task.queue, updated_task.queue)
+
+    def test_sync_remove_events_remote_event_not_found(self):
+        self.registry.remote_event('app_3', 'event_3')
+
+        backend = self.backend_cls(self.registry)
+        backend.sync_remote_events()
+
+        self.assertEqual(0, len(self.created_events))
+        self.assertEqual(0, len(self.created_tasks))
+        self.assertEqual(0, len(self.deleted_events))
+        self.assertEqual(0, len(self.removed_tasks))
+        self.assertEqual(0, len(self.updated_tasks))
+
+
+class BroadcastTaskTestCase(TestCase):
+
+    def tearDown(self):
+        registry.events = []
+
+    @mock.patch('celery_events.tasks.signature')
+    def test_run(self, mock_signature):
+        event = registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
+        event.add_task_name('task', queue='queue')
+        broadcast_task = BroadcastTask()
+        broadcast_task.run(app_name='app', event_name='event', a='a', b='b')
+        mock_signature.assert_called_with('task', kwargs={'a': 'a', 'b': 'b'}, queue='queue')
+
+    @mock.patch('celery_events.tasks.signature')
+    def test_run_no_app_name_event_name(self, mock_signature):
+        broadcast_task = BroadcastTask()
+        broadcast_task.run(a='a', b='b')
+        mock_signature.assert_not_called()
+
+    def test_run_no_event(self):
+        broadcast_task = BroadcastTask()
+        try:
+            broadcast_task.run(app_name='app', event_name='event', a='a', b='b')
+            self.fail()
+        except RuntimeError:
+            pass
