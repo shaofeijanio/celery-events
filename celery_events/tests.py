@@ -2,7 +2,7 @@ import datetime
 
 from unittest import mock, TestCase
 
-from celery_events import registry, sync_local_events, sync_remote_events, update_local_events
+from celery_events import app_container
 from celery_events.app import App
 from celery_events.backends import Backend
 from celery_events.events import Event, Task, Registry
@@ -497,12 +497,42 @@ class BackendTestCase(TestCase):
 
 class BroadcastTaskTestCase(TestCase):
 
-    def tearDown(self):
-        registry.events = []
+    def setUp(self):
+        class TestBacked(Backend):
+
+            def get_local_namespaces(self):
+                return []
+
+            def get_task_namespace(self, task):
+                return task.name
+
+            def fetch_events_for_namespaces(self, app_names):
+                return []
+
+            def fetch_events(self, events):
+                return []
+
+            def delete_events(self, events):
+                pass
+
+            def create_events(self, events):
+                pass
+
+            def create_tasks(self, event, tasks):
+                pass
+
+            def remove_tasks(self, event, tasks):
+                pass
+
+            def update_tasks(self, tasks):
+                pass
+
+        self.app = App(TestBacked)
+        app_container.app = self.app
 
     @mock.patch('celery_events.tasks.signature')
     def test_run(self, mock_signature):
-        event = registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
+        event = self.app.registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
         event.add_task_name('task', queue='queue')
         broadcast_task = BroadcastTask()
         broadcast_task.run(app_name='app', event_name='event', a='a', b='b')
@@ -522,49 +552,14 @@ class BroadcastTaskTestCase(TestCase):
         except RuntimeError:
             pass
 
-
-class APITestCase(TestCase):
-
-    def test_sync_events(self):
-        update_local_events_called_times = []
-        sync_local_events_called_times = []
-        sync_remote_events_called_times = []
-
-        class TestBackend(Backend):
-
-            def update_local_events(self):
-                update_local_events_called_times.append(1)
-
-            def sync_local_events(self):
-                sync_local_events_called_times.append(1)
-
-            def sync_remote_events(self):
-                sync_remote_events_called_times.append(1)
-
-            def get_local_namespaces(self):
-                return []
-
-        update_local_events(TestBackend)
-        self.assertEqual(1, len(update_local_events_called_times))
-        sync_local_events(TestBackend)
-        self.assertEqual(1, len(sync_local_events_called_times))
-        sync_remote_events(TestBackend)
-        self.assertEqual(1, len(sync_remote_events_called_times))
-
-    def test_sync_events_invalid_backend_class(self):
-        class InvalidBackend:
-            pass
-
+    def test_run_no_app(self):
+        self.app.registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
+        app_container.app = None
+        broadcast_task = BroadcastTask()
         try:
-            sync_local_events(InvalidBackend)
+            broadcast_task.run(app_name='app', event_name='event', a='a', b='b')
             self.fail()
-        except TypeError:
-            pass
-
-        try:
-            sync_remote_events(InvalidBackend)
-            self.fail()
-        except TypeError:
+        except RuntimeError:
             pass
 
 

@@ -1,4 +1,5 @@
-from celery_events import Backend, Registry
+from celery_events.backends import Backend
+from celery_events.events import Registry
 
 
 class App:
@@ -29,3 +30,9 @@ class App:
     def sync_remote_events(self):
         backend = self._get_backend()
         backend.sync_remote_events()
+
+
+class AppContainer:
+
+    def __init__(self):
+        self.app = None
