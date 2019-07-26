@@ -61,10 +61,12 @@ class EventTestCase(TestCase):
 
         self.assertEqual([task], event.tasks)
 
-    @mock.patch('celery_events.events.tasks.BroadcastTask')
-    def test_broadcast(self, mock_broadcast_task_cls):
+    @mock.patch('celery_events.events.current_app')
+    def test_broadcast(self, mock_current_app):
         mock_broadcast_task = mock.Mock()
-        mock_broadcast_task_cls.return_value = mock_broadcast_task
+        mock_current_app.tasks = {
+            'celery_events.tasks.broadcast_task': mock_broadcast_task
+        }
 
         event = Event('app', 'event')
         event.broadcast()
@@ -117,10 +119,12 @@ class EventTestCase(TestCase):
         except RuntimeError:
             pass
 
-    @mock.patch('celery_events.events.tasks.BroadcastTask')
-    def test_broadcast_valid_kwargs(self, mock_broadcast_task_cls):
+    @mock.patch('celery_events.events.current_app')
+    def test_broadcast_valid_kwargs(self, mock_current_app):
         mock_broadcast_task = mock.Mock()
-        mock_broadcast_task_cls.return_value = mock_broadcast_task
+        mock_current_app.tasks = {
+            'celery_events.tasks.broadcast_task': mock_broadcast_task
+        }
 
         event = Event('app', 'event', kwarg_keys=['a', 'b'])
 
@@ -136,11 +140,12 @@ class EventTestCase(TestCase):
             queue='events_broadcast'
         )
 
-    @mock.patch('celery_events.events.tasks.BroadcastTask')
-    def test_broadcast_now(self, mock_broadcast_task_cls):
-
+    @mock.patch('celery_events.events.current_app')
+    def test_broadcast_now(self, mock_current_app):
         mock_broadcast_task = mock.Mock()
-        mock_broadcast_task_cls.return_value = mock_broadcast_task
+        mock_current_app.tasks = {
+            'celery_events.tasks.broadcast_task': mock_broadcast_task
+        }
 
         event = Event('app', 'event')
         event.broadcast(now=True)

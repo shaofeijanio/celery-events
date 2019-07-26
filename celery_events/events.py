@@ -1,6 +1,6 @@
 import logging
 
-from celery_events import tasks
+from celery import current_app
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class Event(BackendModel):
             'event_name': self.event_name,
             **kwargs
         }
-        broadcast_task = tasks.BroadcastTask()
+        broadcast_task = current_app.tasks['celery_events.tasks.broadcast_task']
 
         if now:
             broadcast_task.run(**run_task_kwargs)
