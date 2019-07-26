@@ -18,6 +18,7 @@ class BroadcastTask(current_app.Task):
         event_name = kwargs.pop('event_name', None)
 
         if app_name and event_name:
+            app.update_local_events()
             event = app.registry.event(app_name, event_name, raise_does_not_exist=True)
             for task in event.tasks:
                 signature(task.name, kwargs=kwargs, queue=task.queue).delay()

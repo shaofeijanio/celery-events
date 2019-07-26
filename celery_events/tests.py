@@ -498,34 +498,16 @@ class BackendTestCase(TestCase):
 class BroadcastTaskTestCase(TestCase):
 
     def setUp(self):
+        self.update_local_events_called_times = []
+        test_case = self
+
         class TestBacked(Backend):
+
+            def update_local_events(self):
+                test_case.update_local_events_called_times.append(1)
 
             def get_local_namespaces(self):
                 return []
-
-            def get_task_namespace(self, task):
-                return task.name
-
-            def fetch_events_for_namespaces(self, app_names):
-                return []
-
-            def fetch_events(self, events):
-                return []
-
-            def delete_events(self, events):
-                pass
-
-            def create_events(self, events):
-                pass
-
-            def create_tasks(self, event, tasks):
-                pass
-
-            def remove_tasks(self, event, tasks):
-                pass
-
-            def update_tasks(self, tasks):
-                pass
 
         self.app = create_app(TestBacked)
 
@@ -535,6 +517,7 @@ class BroadcastTaskTestCase(TestCase):
         event.add_task_name('task', queue='queue')
         broadcast_task = BroadcastTask()
         broadcast_task.run(app_name='app', event_name='event', a='a', b='b')
+        self.assertEqual(1, len(self.update_local_events_called_times))
         mock_signature.assert_called_with('task', kwargs={'a': 'a', 'b': 'b'}, queue='queue')
 
     @mock.patch('celery_events.tasks.signature')
