@@ -1,6 +1,6 @@
 import logging
 
-from celery import current_app
+from celery_events.tasks import broadcast
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +74,11 @@ class Event(BackendModel):
             'event_name': self.event_name,
             **kwargs
         }
-        broadcast_task = current_app.tasks['celery_events.tasks.broadcast_task']
 
         if now:
-            broadcast_task.run(**run_task_kwargs)
+            broadcast(**run_task_kwargs)
         else:
-            broadcast_task.apply_async(kwargs=run_task_kwargs, queue=self.get_broadcast_queue())
+            broadcast.apply_async(kwargs=run_task_kwargs, queue=self.get_broadcast_queue())
 
     def add_task(self, task):
         if task not in self.tasks:

@@ -6,7 +6,7 @@ from celery_events import create_app, app_container
 from celery_events.app import App
 from celery_events.backends import Backend
 from celery_events.events import Event, Task, Registry
-from celery_events.tasks import BroadcastTask
+from celery_events.tasks import broadcast
 
 
 class EventTestCase(TestCase):
@@ -61,13 +61,8 @@ class EventTestCase(TestCase):
 
         self.assertEqual([task], event.tasks)
 
-    @mock.patch('celery_events.events.current_app')
-    def test_broadcast(self, mock_current_app):
-        mock_broadcast_task = mock.Mock()
-        mock_current_app.tasks = {
-            'celery_events.tasks.broadcast_task': mock_broadcast_task
-        }
-
+    @mock.patch('celery_events.events.broadcast')
+    def test_broadcast(self, mock_broadcast_task):
         event = Event('app', 'event')
         event.broadcast()
 
@@ -119,13 +114,8 @@ class EventTestCase(TestCase):
         except RuntimeError:
             pass
 
-    @mock.patch('celery_events.events.current_app')
-    def test_broadcast_valid_kwargs(self, mock_current_app):
-        mock_broadcast_task = mock.Mock()
-        mock_current_app.tasks = {
-            'celery_events.tasks.broadcast_task': mock_broadcast_task
-        }
-
+    @mock.patch('celery_events.events.broadcast')
+    def test_broadcast_valid_kwargs(self, mock_broadcast_task):
         event = Event('app', 'event', kwarg_keys=['a', 'b'])
 
         event.broadcast(a=1)
@@ -140,17 +130,12 @@ class EventTestCase(TestCase):
             queue='events_broadcast'
         )
 
-    @mock.patch('celery_events.events.current_app')
-    def test_broadcast_now(self, mock_current_app):
-        mock_broadcast_task = mock.Mock()
-        mock_current_app.tasks = {
-            'celery_events.tasks.broadcast_task': mock_broadcast_task
-        }
-
+    @mock.patch('celery_events.events.broadcast')
+    def test_broadcast_now(self, mock_broadcast_task):
         event = Event('app', 'event')
         event.broadcast(now=True)
 
-        mock_broadcast_task.run.assert_called_with(app_name='app', event_name='event')
+        mock_broadcast_task.assert_called_with(app_name='app', event_name='event')
 
 
 class TaskTestCase(TestCase):
@@ -520,21 +505,18 @@ class BroadcastTaskTestCase(TestCase):
     def test_run(self, mock_signature):
         event = self.app.registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
         event.add_task_name('task', queue='queue')
-        broadcast_task = BroadcastTask()
-        broadcast_task.run(app_name='app', event_name='event', a='a', b='b')
+        broadcast(app_name='app', event_name='event', a='a', b='b')
         self.assertEqual(1, len(self.update_local_events_called_times))
         mock_signature.assert_called_with('task', kwargs={'a': 'a', 'b': 'b'}, queue='queue')
 
     @mock.patch('celery_events.tasks.signature')
     def test_run_no_app_name_event_name(self, mock_signature):
-        broadcast_task = BroadcastTask()
-        broadcast_task.run(a='a', b='b')
+        broadcast(a='a', b='b')
         mock_signature.assert_not_called()
 
     def test_run_no_event(self):
-        broadcast_task = BroadcastTask()
         try:
-            broadcast_task.run(app_name='app', event_name='event', a='a', b='b')
+            broadcast(app_name='app', event_name='event', a='a', b='b')
             self.fail()
         except RuntimeError:
             pass
@@ -542,9 +524,8 @@ class BroadcastTaskTestCase(TestCase):
     def test_run_no_app(self):
         self.app.registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
         app_container.app = None
-        broadcast_task = BroadcastTask()
         try:
-            broadcast_task.run(app_name='app', event_name='event', a='a', b='b')
+            broadcast(app_name='app', event_name='event', a='a', b='b')
             self.fail()
         except RuntimeError:
             pass
