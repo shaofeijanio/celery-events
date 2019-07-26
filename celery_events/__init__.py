@@ -1,5 +1,6 @@
 from celery_events.backends import Backend
 from celery_events.events import Registry
+from celery_events.app import App
 
 registry = Registry()
 
