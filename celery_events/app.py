@@ -1,3 +1,5 @@
+import importlib
+
 from celery_events.backends import Backend
 from celery_events.events import Registry
 
@@ -15,6 +17,8 @@ class App:
             self.registry.set_get_broadcast_queue(get_broadcast_queue)
         if get_task_name_queue:
             self.registry.set_get_task_name_queue(get_task_name_queue)
+
+        importlib.import_module('celery_events.tasks')
 
     def _get_backend(self):
         return self.backend_class(self.registry)
