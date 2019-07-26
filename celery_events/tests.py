@@ -2,7 +2,8 @@ import datetime
 
 from unittest import mock, TestCase
 
-from celery_events import registry, sync_local_events, sync_remote_events
+from celery_events import registry, sync_local_events, sync_remote_events, update_local_events
+from celery_events.app import App
 from celery_events.backends import Backend
 from celery_events.events import Event, Task, Registry
 from celery_events.tasks import BroadcastTask
@@ -525,10 +526,14 @@ class BroadcastTaskTestCase(TestCase):
 class APITestCase(TestCase):
 
     def test_sync_events(self):
+        update_local_events_called_times = []
         sync_local_events_called_times = []
         sync_remote_events_called_times = []
 
         class TestBackend(Backend):
+
+            def update_local_events(self):
+                update_local_events_called_times.append(1)
 
             def sync_local_events(self):
                 sync_local_events_called_times.append(1)
@@ -539,6 +544,8 @@ class APITestCase(TestCase):
             def get_local_namespaces(self):
                 return []
 
+        update_local_events(TestBackend)
+        self.assertEqual(1, len(update_local_events_called_times))
         sync_local_events(TestBackend)
         self.assertEqual(1, len(sync_local_events_called_times))
         sync_remote_events(TestBackend)
@@ -559,3 +566,61 @@ class APITestCase(TestCase):
             self.fail()
         except TypeError:
             pass
+
+
+class AppTestCase(TestCase):
+
+    def tearDown(self):
+        Event.get_broadcast_queue = lambda _self: 'events_broadcast'
+        Task.get_task_name_queue = lambda _self, task_name: None
+
+    def test_sync_events(self):
+        update_local_events_called_times = []
+        sync_local_events_called_times = []
+        sync_remote_events_called_times = []
+
+        class TestBackend(Backend):
+
+            def update_local_events(self):
+                update_local_events_called_times.append(1)
+
+            def sync_local_events(self):
+                sync_local_events_called_times.append(1)
+
+            def sync_remote_events(self):
+                sync_remote_events_called_times.append(1)
+
+            def get_local_namespaces(self):
+                return []
+
+        app = App(TestBackend)
+        app.update_local_events()
+        self.assertEqual(1, len(update_local_events_called_times))
+        app.sync_local_events()
+        self.assertEqual(1, len(sync_local_events_called_times))
+        app.sync_remote_events()
+        self.assertEqual(1, len(sync_remote_events_called_times))
+
+    def test_invalid_backend_class(self):
+        class InvalidBackend:
+            pass
+
+        try:
+            App(InvalidBackend)
+            self.fail()
+        except TypeError:
+            pass
+
+    def test_set_registry(self):
+        def get_broadcast_queue():
+            return 'new_broadcast_queue'
+
+        def get_task_name_queue(task_name):
+            return 'queue_{0}'.format(task_name)
+
+        App(Backend, get_broadcast_queue=get_broadcast_queue, get_task_name_queue=get_task_name_queue)
+
+        broadcast_queue = Event('app', 'event').get_broadcast_queue()
+        self.assertEqual('new_broadcast_queue', broadcast_queue)
+        task_name_queue = Task('task').get_task_name_queue('task')
+        self.assertEqual('queue_task', task_name_queue)
