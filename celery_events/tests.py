@@ -2,7 +2,7 @@ import datetime
 
 from unittest import mock, TestCase
 
-from celery_events import app_container
+from celery_events import create_app, app_container
 from celery_events.app import App
 from celery_events.backends import Backend
 from celery_events.events import Event, Task, Registry
@@ -527,8 +527,7 @@ class BroadcastTaskTestCase(TestCase):
             def update_tasks(self, tasks):
                 pass
 
-        self.app = App(TestBacked)
-        app_container.app = self.app
+        self.app = create_app(TestBacked)
 
     @mock.patch('celery_events.tasks.signature')
     def test_run(self, mock_signature):
