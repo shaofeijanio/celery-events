@@ -23,10 +23,10 @@ class App:
     def _get_backend(self):
         return self.backend_class(self.registry)
 
-    def update_local_events(self):
+    def update_local_event(self, event):
         if self.backend_class:
             backend = self._get_backend()
-            backend.update_local_events()
+            backend.update_local_event(event)
 
     def sync_local_events(self):
         if self.backend_class:

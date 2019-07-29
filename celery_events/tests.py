@@ -327,6 +327,9 @@ class BackendTestCase(TestCase):
                     if event in events
                 ]
 
+            def should_update_event(self, event):
+                return True
+
             def delete_events(self, events):
                 for event in events:
                     test_case.deleted_events.append(event)
@@ -349,7 +352,7 @@ class BackendTestCase(TestCase):
 
         self.backend_cls = TestBackend
 
-    def test_update_local_events(self):
+    def test_update_local_event(self):
         local_event = self.registry.create_local_event('app_1', 'event_1')
         local_event.add_task_name('task_1')
         local_event_from_backend = Event.local_instance('app_1', 'event_1')
@@ -357,31 +360,31 @@ class BackendTestCase(TestCase):
         local_event_from_backend.add_task_name('task_2')
 
         backend = self.backend_cls(self.registry)
-        backend.update_local_events()
+        backend.update_local_event(local_event)
 
         self.assertEqual(1, len(self.registry.events))
         self.assertEqual(local_event, self.registry.events[0])
         self.assertEqual([Task('task_1'), Task('task_2')], self.registry.events[0].tasks)
 
-    def test_update_local_events_no_remote_tasks(self):
+    def test_update_local_event_no_remote_tasks(self):
         local_event = self.registry.create_local_event('app_1', 'event_1')
         local_event.add_task_name('task_1')
         local_event_from_backend = Event.local_instance('app_1', 'event_1')
         self.local_events_from_backend.append(local_event_from_backend)
 
         backend = self.backend_cls(self.registry)
-        backend.update_local_events()
+        backend.update_local_event(local_event)
 
         self.assertEqual(1, len(self.registry.events))
         self.assertEqual(local_event, self.registry.events[0])
         self.assertEqual([Task('task_1')], self.registry.events[0].tasks)
 
-    def test_update_local_events_no_event_from_backend(self):
+    def test_update_local_event_no_event_from_backend(self):
         local_event = self.registry.create_local_event('app_1', 'event_1')
         local_event.add_task_name('task_1')
 
         backend = self.backend_cls(self.registry)
-        backend.update_local_events()
+        backend.update_local_event(local_event)
 
         self.assertEqual(1, len(self.registry.events))
         self.assertEqual(local_event, self.registry.events[0])
@@ -488,13 +491,13 @@ class BackendTestCase(TestCase):
 class BroadcastTaskTestCase(TestCase):
 
     def setUp(self):
-        self.update_local_events_called_times = []
+        self.update_local_event_events = []
         test_case = self
 
         class TestBacked(Backend):
 
-            def update_local_events(self):
-                test_case.update_local_events_called_times.append(1)
+            def update_local_event(self, event):
+                test_case.update_local_event_events.append(event)
 
             def get_local_namespaces(self):
                 return []
@@ -506,7 +509,7 @@ class BroadcastTaskTestCase(TestCase):
         event = self.app.registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
         event.add_task_name('task', queue='queue')
         broadcast(app_name='app', event_name='event', a='a', b='b')
-        self.assertEqual(1, len(self.update_local_events_called_times))
+        self.assertEqual([event], self.update_local_event_events)
         mock_signature.assert_called_with('task', kwargs={'a': 'a', 'b': 'b'}, queue='queue')
 
     @mock.patch('celery_events.tasks.signature')
@@ -537,15 +540,27 @@ class AppTestCase(TestCase):
         Event.get_broadcast_queue = lambda _self: 'events_broadcast'
         Task.get_task_name_queue = lambda _self, task_name: None
 
+    def test_update_local_event(self):
+        update_local_event_events = []
+
+        class TestBackend(Backend):
+
+            def update_local_event(self, event):
+                update_local_event_events.append(event)
+
+            def get_local_namespaces(self):
+                return []
+
+        event = Event('app_name', 'event_name')
+        app = App(TestBackend)
+        app.update_local_event(event)
+        self.assertEqual([event], update_local_event_events)
+
     def test_sync_events(self):
-        update_local_events_called_times = []
         sync_local_events_called_times = []
         sync_remote_events_called_times = []
 
         class TestBackend(Backend):
-
-            def update_local_events(self):
-                update_local_events_called_times.append(1)
 
             def sync_local_events(self):
                 sync_local_events_called_times.append(1)
@@ -557,8 +572,6 @@ class AppTestCase(TestCase):
                 return []
 
         app = App(TestBackend)
-        app.update_local_events()
-        self.assertEqual(1, len(update_local_events_called_times))
         app.sync_local_events()
         self.assertEqual(1, len(sync_local_events_called_times))
         app.sync_remote_events()
