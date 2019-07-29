@@ -4,6 +4,7 @@
 pip install git+https://github.com/shaofeijanio/celery-events.git@master#egg=celery-events
 ```
 
+Note that [Celery](http://www.celeryproject.org/) is a dependency and should be installed separately.
 
 ## Initialization
 
