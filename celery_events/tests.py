@@ -346,9 +346,9 @@ class BackendTestCase(TestCase):
                 for task in tasks:
                     test_case.removed_tasks.append((event, task))
 
-            def update_tasks(self, tasks):
+            def update_tasks(self, event, tasks):
                 for task in tasks:
-                    test_case.updated_tasks.append(task)
+                    test_case.updated_tasks.append((event, task))
 
         self.backend_cls = TestBackend
 
@@ -471,7 +471,8 @@ class BackendTestCase(TestCase):
         self.assertEqual(0, len(self.deleted_events))
         self.assertEqual(0, len(self.removed_tasks))
         self.assertEqual(1, len(self.updated_tasks))
-        updated_task = self.updated_tasks[0]
+        updated_event, updated_task = self.updated_tasks[0]
+        self.assertEqual(remote_event, updated_event)
         self.assertEqual(local_task, updated_task)
         self.assertEqual(local_task.queue, updated_task.queue)
 

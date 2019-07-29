@@ -121,7 +121,7 @@ class Backend:
             for event, tasks_to_create, tasks_to_remove, tasks_to_update in events_to_update:
                 self.create_tasks(event, tasks_to_create)
                 self.remove_tasks(event, tasks_to_remove)
-                self.update_tasks(tasks_to_update)
+                self.update_tasks(event, tasks_to_update)
 
     def get_local_namespaces(self):
         raise NotImplementedError
@@ -150,5 +150,5 @@ class Backend:
     def remove_tasks(self, event, tasks):
         raise NotImplementedError
 
-    def update_tasks(self, tasks):
+    def update_tasks(self, event, tasks):
         raise NotImplementedError
