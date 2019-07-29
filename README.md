@@ -71,3 +71,25 @@ in the below output.
 a, b
 b, a
 ```
+
+## Cross-application support
+
+Multiple applications running the celery-events framework are able to access each others' events and add tasks to events
+across applications. A remote event can be declared in the follow way. Adding tasks and triggering the events are the
+same as before.
+
+```python
+# Declare a remote event using the app object created by create_app()
+REMOTE_EVENT = app.registry.remote_event('remote_app_name', 'remote_event_name')
+```
+
+## Backends
+
+If cross-application event is required, there needs to be a way for remote applications to know about the tasks that are
+registered to them. This requires a `Backend` class to be implemented, which is used to publish local tasks to remote
+events and get the remote tasks that are registered with local events. More information on how to override a backend 
+class can be found in `celery_events.backends.Backend`. 
+
+To specify the backend class to use, pass it as the `backend_class` argument in the `create_app()` method. If
+ `backend_class` is not specified, no synchronization will be done with the backend and the application can only process
+local events.
