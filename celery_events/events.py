@@ -53,7 +53,7 @@ class Event(BackendModel):
                 raise ValueError('Event does not accept kwarg {0}.'.format(key))
 
         for key, value in kwargs.items():
-            if not isinstance(value, (str, float, int, bool, list, dict)):
+            if value is not None and not isinstance(value, (str, float, int, bool, list, dict)):
                 raise TypeError('Kwarg {0} is not a valid JSON serializable type.'.format(key))
 
     def _get_or_create_task(self, name, queue):
