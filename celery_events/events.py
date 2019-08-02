@@ -31,12 +31,13 @@ class BackendModel:
 class Event(BackendModel):
     """Event."""
 
-    def __init__(self, app_name, event_name, kwarg_keys=None):
+    def __init__(self, app_name, event_name, kwarg_keys=None, accept_any_kwarg_keys=False):
         super().__init__()
         self.app_name = app_name
         self.event_name = event_name
         self.kwarg_keys = kwarg_keys or []
         self.tasks = []
+        self.accept_any_kwarg_keys = accept_any_kwarg_keys
 
     def __eq__(self, other):
         return (self.app_name, self.event_name) == (other.app_name, other.event_name)
@@ -48,9 +49,10 @@ class Event(BackendModel):
         return '<{0}-{1}>'.format(self.app_name, self.event_name)
 
     def _check_kwargs(self, kwargs):
-        for key in kwargs.keys():
-            if key not in self.kwarg_keys:
-                raise ValueError('Event does not accept kwarg {0}.'.format(key))
+        if not self.accept_any_kwarg_keys:
+            for key in kwargs.keys():
+                if key not in self.kwarg_keys:
+                    raise ValueError('Event does not accept kwarg {0}.'.format(key))
 
         for key, value in kwargs.items():
             if value is not None and not isinstance(value, (str, float, int, bool, list, dict)):

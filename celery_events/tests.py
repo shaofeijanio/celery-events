@@ -131,6 +131,16 @@ class EventTestCase(TestCase):
         )
 
     @mock.patch('celery_events.events.broadcast')
+    def test_broadcast_accept_any_kwarg_keys(self, mock_broadcast_task):
+        event = Event('app', 'event', accept_any_kwarg_keys=True)
+        event.broadcast(a=1, b=2)
+
+        mock_broadcast_task.apply_async.assert_called_with(
+            kwargs={'app_name': 'app', 'event_name': 'event', 'a': 1, 'b': 2},
+            queue='events_broadcast'
+        )
+
+    @mock.patch('celery_events.events.broadcast')
     def test_broadcast_now(self, mock_broadcast_task):
         event = Event('app', 'event')
         event.broadcast(now=True)
