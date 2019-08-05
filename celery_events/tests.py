@@ -3,9 +3,9 @@ import datetime
 from unittest import mock, TestCase
 
 from celery_events import create_app, app_container
-from celery_events.app import App
+from celery_events.app import App, Registry
 from celery_events.backends import Backend
-from celery_events.events import Event, Task, Registry
+from celery_events.events import Event, Task
 from celery_events.tasks import broadcast
 
 
