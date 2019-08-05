@@ -11,6 +11,9 @@ from celery_events.tasks import broadcast
 
 class EventTestCase(TestCase):
 
+    def setUp(self):
+        create_app()
+
     def test_add_task(self):
         event = Event('app', 'event')
         task = Task('task')
@@ -308,6 +311,8 @@ class RegistryTestCase(TestCase):
 class BackendTestCase(TestCase):
 
     def setUp(self):
+        create_app()
+
         self.registry = Registry()
         self.namespaces = ['app_1', 'app_2']
         self.local_events_from_backend = []
@@ -546,6 +551,9 @@ class BroadcastTaskTestCase(TestCase):
 
 
 class AppTestCase(TestCase):
+
+    def setUp(self):
+        create_app()
 
     def tearDown(self):
         Event.get_broadcast_queue = lambda _self: 'events_broadcast'

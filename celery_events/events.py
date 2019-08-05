@@ -5,12 +5,25 @@ from celery_events.tasks import broadcast
 logger = logging.getLogger(__name__)
 
 
-class BackendModel:
+class AppModel:
+
+    def __new__(cls):
+        from celery_events import app
+
+        if app is None:
+            raise RuntimeError('Application is not initialized.')
+
+        obj = super().__new__(cls)
+        obj.app = app
+        return obj
+
+
+class EventModel(AppModel):
 
     def __new__(cls, *args, **kwargs):
+        obj = super().__new__(cls)
         is_remote = kwargs.pop('is_remote', False)
         backend_obj = kwargs.pop('backend_obj', None)
-        obj = super().__new__(cls)
         obj.is_remote = is_remote
         obj.backend_obj = backend_obj
         return obj
@@ -28,7 +41,7 @@ class BackendModel:
         return instance
 
 
-class Event(BackendModel):
+class Event(EventModel):
     """Event."""
 
     def __init__(self, app_name, event_name, kwarg_keys=None, accept_any_kwarg_keys=False):
@@ -98,7 +111,7 @@ class Event(BackendModel):
         return 'events_broadcast'
 
 
-class Task(BackendModel):
+class Task(EventModel):
     """Task for an event."""
 
     def __init__(self, name, queue=None):
