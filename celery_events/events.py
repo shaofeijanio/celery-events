@@ -1,42 +1,67 @@
 import logging
 
-from celery_events.tasks import broadcast
+from celery import shared_task, signature
 
 logger = logging.getLogger(__name__)
 
 
-class AppModel:
+class Broadcaster:
 
-    def __new__(cls):
-        from celery_events import app
+    def __init__(self, app, queue, broadcast_task_base=None):
 
-        if app is None:
-            raise RuntimeError('Application is not initialized.')
+        def _broadcast(**kwargs):
+            """Broadcasts an event by calling the registered tasks."""
 
-        obj = super().__new__(cls)
-        obj.app = app
-        return obj
+            app_name = kwargs.pop('app_name', None)
+            event_name = kwargs.pop('event_name', None)
+
+            if app_name and event_name:
+                event = app.registry.event(app_name, event_name, raise_does_not_exist=True)
+                app.update_local_event(event)
+                for task in event.tasks:
+                    signature(task.name, kwargs=kwargs, queue=task.queue).delay()
+
+        self.queue = queue
+        self.broadcast_func = _broadcast
+        self.broadcast_task = shared_task(base=broadcast_task_base)(_broadcast)
+
+    def broadcast_async(self, **kwargs):
+        self.broadcast_task.apply_async(kwargs=kwargs, queue=self.queue)
+
+    def broadcast_sync(self, **kwargs):
+        self.broadcast_func(**kwargs)
 
 
-class EventModel(AppModel):
+class EventModel:
 
     def __new__(cls, *args, **kwargs):
         obj = super().__new__(cls)
-        is_remote = kwargs.pop('is_remote', False)
-        backend_obj = kwargs.pop('backend_obj', None)
+        app, is_remote, backend_obj = cls._pop_instance_kwargs(kwargs)
+        obj.app = app
         obj.is_remote = is_remote
         obj.backend_obj = backend_obj
         return obj
 
     @classmethod
+    def _pop_instance_kwargs(cls, kwargs):
+        app = kwargs.pop('app', None)
+        is_remote = kwargs.pop('is_remote', False)
+        backend_obj = kwargs.pop('backend_obj', None)
+        return app, is_remote, backend_obj
+
+    @classmethod
     def local_instance(cls, *args, **kwargs):
-        instance = cls.__new__(cls, is_remote=False)
+        kwargs['is_remote'] = False
+        instance = cls.__new__(cls, *args, **kwargs)
+        cls._pop_instance_kwargs(kwargs)
         instance.__init__(*args, **kwargs)
         return instance
 
     @classmethod
     def remote_instance(cls, *args, **kwargs):
-        instance = cls.__new__(cls, is_remote=True)
+        kwargs['is_remote'] = True
+        instance = cls.__new__(cls, *args, **kwargs)
+        cls._pop_instance_kwargs(kwargs)
         instance.__init__(*args, **kwargs)
         return instance
 
@@ -74,7 +99,7 @@ class Event(EventModel):
     def _get_or_create_task(self, name, queue):
         task = next((t for t in self.tasks if t.name == name), None)
         if task is None:
-            task = Task.local_instance(name=name, queue=queue)
+            task = Task.local_instance(name=name, queue=queue, app=self.app)
             self.tasks.append(task)
 
         return task
@@ -84,16 +109,16 @@ class Event(EventModel):
             raise RuntimeError('Cannot broadcast a remote event.')
 
         self._check_kwargs(kwargs)
-        run_task_kwargs = {
+        broadcast_kwargs = {
             'app_name': self.app_name,
             'event_name': self.event_name,
             **kwargs
         }
 
         if now:
-            broadcast(**run_task_kwargs)
+            self.app.broadcaster.broadcast_sync(**broadcast_kwargs)
         else:
-            broadcast.apply_async(kwargs=run_task_kwargs, queue=self.get_broadcast_queue())
+            self.app.broadcaster.broadcast_async(**broadcast_kwargs)
 
     def add_task(self, task):
         if task not in self.tasks:
@@ -107,9 +132,6 @@ class Event(EventModel):
     def add_c_task(self, c_task, queue=None):
         return self._get_or_create_task(c_task.name, queue)
 
-    def get_broadcast_queue(self):
-        return 'events_broadcast'
-
 
 class Task(EventModel):
     """Task for an event."""
@@ -117,7 +139,7 @@ class Task(EventModel):
     def __init__(self, name, queue=None):
         super().__init__()
         self.name = name
-        self.queue = self._get_queue(name, queue)
+        self.queue = queue or self.app.route(name)
 
     def __eq__(self, other):
         return self.name == other.name
@@ -127,12 +149,3 @@ class Task(EventModel):
 
     def __str__(self):
         return self.name
-
-    def _get_queue(self, name, queue):
-        if queue is None:
-            return self.get_task_name_queue(name)
-        else:
-            return queue
-
-    def get_task_name_queue(self, task_name):
-        return None

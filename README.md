@@ -11,7 +11,7 @@ Note that [Celery](http://www.celeryproject.org/) is a dependency and should be 
 Initialize a celery-events application with the below code. This code can reside in the `__init__.py` of your module.
 
 ```python
-from celery_events import create_app
+from celery_events import App
 from celery_events.backends import Backend
 
 
@@ -30,7 +30,7 @@ def get_task_name_queue(task_name):
     ...
 
 
-app = create_app(
+app = App(
     backend_class=MyBackend,
     get_broadcast_queue=get_broadcast_queue,
     get_task_name_queue=get_task_name_queue

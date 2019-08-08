@@ -1,26 +1,12 @@
-import importlib
-
 from celery_events.backends import Backend
-from celery_events.events import Event, Task
+from celery_events.events import Event, Broadcaster
 
 
 class Registry:
 
-    def __init__(self):
+    def __init__(self, app):
+        self.app = app
         self.events = []
-
-    # Configuration methods #
-    def set_get_broadcast_queue(self, get_broadcast_queue):
-        def _get_broadcast_queue(_self):
-            return get_broadcast_queue()
-
-        Event.get_broadcast_queue = _get_broadcast_queue
-
-    def set_get_task_name_queue(self, get_task_name_queue):
-        def _get_task_name_queue(_self, task_name):
-            return get_task_name_queue(task_name)
-
-        Task.get_task_name_queue = _get_task_name_queue
 
     # Event management methods #
     @property
@@ -54,7 +40,7 @@ class Registry:
     def create_local_event(self, app_name, event_name, kwarg_keys=None):
         event = self.event(app_name, event_name, local_only=True, raise_does_not_exist=False)
         if event is None:
-            event = Event.local_instance(app_name=app_name, event_name=event_name, kwarg_keys=kwarg_keys)
+            event = Event.local_instance(app_name=app_name, event_name=event_name, kwarg_keys=kwarg_keys, app=self.app)
             self.events.append(event)
 
         return event
@@ -65,7 +51,7 @@ class Registry:
     def remote_event(self, app_name, event_name):
         event = self.event(app_name, event_name, remote_only=True, raise_does_not_exist=False)
         if event is None:
-            event = Event.remote_instance(app_name=app_name, event_name=event_name)
+            event = Event.remote_instance(app_name=app_name, event_name=event_name, app=self.app)
             self.events.append(event)
 
         return event
@@ -73,19 +59,14 @@ class Registry:
 
 class App:
 
-    def __init__(self, backend_class=None, get_broadcast_queue=None, get_task_name_queue=None):
+    def __init__(self, backend_class=None, broadcast_queue=None, routes=tuple()):
         if backend_class and not issubclass(backend_class, Backend):
             raise TypeError('backend_class is not a subclass of Backend.')
 
         self.backend_class = backend_class
-        self.registry = Registry()
-
-        if get_broadcast_queue:
-            self.registry.set_get_broadcast_queue(get_broadcast_queue)
-        if get_task_name_queue:
-            self.registry.set_get_task_name_queue(get_task_name_queue)
-
-        importlib.import_module('celery_events.tasks')
+        self.broadcaster = Broadcaster(self, broadcast_queue or 'events_broadcast')
+        self.routes = routes
+        self.registry = Registry(self)
 
     def _get_backend(self):
         return self.backend_class(self.registry)
@@ -105,8 +86,15 @@ class App:
             backend = self._get_backend()
             backend.sync_remote_events()
 
+    def route(self, task_name):
+        for route in self.routes:
 
-class AppContainer:
+            class DummyTask:
+                def __init__(self, name):
+                    self.name = name
 
-    def __init__(self):
-        self.app = None
+            r = route(name=task_name, args=None, kwargs=None, options=None, task=DummyTask(task_name))
+            if isinstance(r, dict) and 'queue' in r:
+                return r.get('queue')
+
+        return None
