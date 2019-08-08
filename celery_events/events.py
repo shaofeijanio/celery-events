@@ -67,14 +67,6 @@ class EventModel:
         instance.__init__(*args, **kwargs)
         return instance
 
-    @classmethod
-    def backend_instance(cls, *args, **kwargs):
-        kwargs['is_backend'] = True
-        instance = cls.__new__(cls, *args, **kwargs)
-        cls._pop_instance_kwargs(kwargs)
-        instance.__init__(*args, **kwargs)
-        return instance
-
 
 class Event(EventModel):
     """Event."""
@@ -106,11 +98,11 @@ class Event(EventModel):
             if value is not None and not isinstance(value, (str, float, int, bool, list, dict)):
                 raise TypeError('Kwarg {0} is not a valid JSON serializable type.'.format(key))
 
-    def _get_or_create_task(self, name, queue):
+    def _get_or_create_task(self, name, queue, is_remote):
         task = next((t for t in self.tasks if t.name == name), None)
         if task is None:
-            if self.is_backend:
-                task = Task.backend_instance(name=name, queue=queue)
+            if is_remote:
+                task = Task.remote_instance(name=name, queue=queue, app=self.app)
             else:
                 task = Task.local_instance(name=name, queue=queue, app=self.app)
 
@@ -140,11 +132,11 @@ class Event(EventModel):
 
         return task
 
-    def add_task_name(self, name, queue=None):
-        return self._get_or_create_task(name, queue)
+    def add_remote_task_name(self, name, queue=None):
+        return self._get_or_create_task(name, queue, True)
 
-    def add_c_task(self, c_task, queue=None):
-        return self._get_or_create_task(c_task.name, queue)
+    def add_local_c_task(self, c_task, queue=None):
+        return self._get_or_create_task(c_task.name, queue, False)
 
 
 class Task(EventModel):
@@ -155,10 +147,8 @@ class Task(EventModel):
         self.name = name
         if self.is_remote:
             self.queue = queue
-        elif not self.is_backend:
-            self.queue = queue or self.app.route(name)
         else:
-            self.queue = None
+            self.queue = queue or self.app.route(name)
 
     def __eq__(self, other):
         return self.name == other.name
