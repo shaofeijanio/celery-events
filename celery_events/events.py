@@ -36,10 +36,9 @@ class EventModel:
 
     def __new__(cls, *args, **kwargs):
         obj = super().__new__(cls)
-        app, is_remote, is_backend, backend_obj = cls._pop_instance_kwargs(kwargs)
+        app, is_remote, backend_obj = cls._pop_instance_kwargs(kwargs)
         obj.app = app
         obj.is_remote = is_remote
-        obj.is_backend = is_backend
         obj.backend_obj = backend_obj
         return obj
 
@@ -47,9 +46,8 @@ class EventModel:
     def _pop_instance_kwargs(cls, kwargs):
         app = kwargs.pop('app', None)
         is_remote = kwargs.pop('is_remote', False)
-        is_backend = kwargs.pop('is_backend', False)
         backend_obj = kwargs.pop('backend_obj', None)
-        return app, is_remote, is_backend, backend_obj
+        return app, is_remote, backend_obj
 
     @classmethod
     def local_instance(cls, *args, **kwargs):
@@ -111,7 +109,7 @@ class Event(EventModel):
         return task
 
     def broadcast(self, now=False, **kwargs):
-        if self.is_remote or self.is_backend:
+        if self.is_remote:
             raise RuntimeError('Cannot broadcast a remote or backend event.')
 
         self._check_kwargs(kwargs)
@@ -132,9 +130,6 @@ class Event(EventModel):
 
         return task
 
-    def add_remote_task_name(self, name, queue=None):
-        return self._get_or_create_task(name, queue, True)
-
     def add_local_c_task(self, c_task, queue=None):
         return self._get_or_create_task(c_task.name, queue, False)
 
@@ -142,13 +137,13 @@ class Event(EventModel):
 class Task(EventModel):
     """Task for an event."""
 
-    def __init__(self, name, queue=None):
+    def __init__(self, name, queue=None, use_routes=True):
         super().__init__()
         self.name = name
-        if self.is_remote:
-            self.queue = queue
-        else:
+        if use_routes:
             self.queue = queue or self.app.route(name)
+        else:
+            self.queue = queue
 
     def __eq__(self, other):
         return self.name == other.name

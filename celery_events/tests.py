@@ -27,7 +27,7 @@ class BroadcasterTaskTestCase(TestCase):
     def test_broadcast_sync(self, mock_signature):
         broadcaster = Broadcaster(self.app, 'broadcast_queue')
         event = self.app.registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
-        event.add_remote_task_name('task', queue='task_queue')
+        event.add_task(Task.local_instance('task', queue='task_queue'))
 
         broadcaster.broadcast_sync(app_name='app', event_name='event', a='a', b='b')
 
@@ -55,7 +55,7 @@ class BroadcasterTaskTestCase(TestCase):
         broadcaster.broadcast_task = mock.Mock()
         broadcaster.broadcast_task.apply_async.side_effect = lambda kwargs, queue: broadcaster.broadcast_func(**kwargs)
         event = self.app.registry.create_local_event('app', 'event', kwarg_keys=['a', 'b'])
-        event.add_remote_task_name('task', queue='task_queue')
+        event.add_task(Task.local_instance('task', queue='task_queue'))
 
         broadcaster.broadcast_async(app_name='app', event_name='event', a='a', b='b')
 
@@ -101,20 +101,7 @@ class EventTestCase(TestCase):
 
         self.assertEqual([task], event.tasks)
 
-    def test_add_task_name(self):
-        event = self.create_event()
-        event.add_remote_task_name('task')
-
-        self.assertEqual([self.create_task()], event.tasks)
-
-    def test_add_task_name_task_already_added(self):
-        event = self.create_event()
-        task = event.add_task(self.create_task())
-        event.add_remote_task_name('task')
-
-        self.assertEqual([task], event.tasks)
-
-    def test_add_c_task(self):
+    def test_add_local_c_task(self):
         class CTask:
             pass
 
@@ -125,7 +112,7 @@ class EventTestCase(TestCase):
 
         self.assertEqual([self.create_task()], event.tasks)
 
-    def test_add_c_task_task_already_added(self):
+    def test_add_local_c_task_task_already_added(self):
         class CTask:
             pass
 
@@ -230,9 +217,9 @@ class TaskTestCase(TestCase):
         task = Task.local_instance('task', app=self.app)
         self.assertEqual('route_queue', task.queue)
 
-    def test_remote_task_no_queue_args(self):
+    def test_no_use_routes(self):
         self.app.routes = [lambda **kwargs: {'queue': 'route_queue'}]
-        task = Task.remote_instance('task', app=self.app)
+        task = Task.remote_instance('task', use_routes=False, app=self.app)
         self.assertEqual(None, task.queue)
 
 
@@ -425,10 +412,10 @@ class BackendTestCase(TestCase):
 
     def test_update_local_event(self):
         local_event = self.registry.create_local_event('app_1', 'event_1')
-        local_event.add_remote_task_name('task_1')
+        local_event.add_task(Task.remote_instance('task_1', use_routes=False))
         local_event_from_backend = Event.local_instance('app_1', 'event_1')
         self.local_events_from_backend.append(local_event_from_backend)
-        local_event_from_backend.add_remote_task_name('task_2')
+        local_event_from_backend.add_task(Task.remote_instance('task_2', use_routes=False))
 
         backend = self.backend_cls(self.registry)
         backend.update_local_event(local_event)
@@ -436,13 +423,13 @@ class BackendTestCase(TestCase):
         self.assertEqual(1, len(self.registry.events))
         self.assertEqual(local_event, self.registry.events[0])
         self.assertEqual(
-            [Task.remote_instance('task_1'), Task.remote_instance('task_2')],
+            [Task.remote_instance('task_1', use_routes=False), Task.remote_instance('task_2', use_routes=False)],
             self.registry.events[0].tasks
         )
 
     def test_update_local_event_no_additional_remote_tasks(self):
         local_event = self.registry.create_local_event('app_1', 'event_1')
-        local_event.add_remote_task_name('task_1')
+        local_event.add_task(Task.remote_instance('task_1', use_routes=False))
         local_event_from_backend = Event.local_instance('app_1', 'event_1')
         self.local_events_from_backend.append(local_event_from_backend)
 
@@ -451,22 +438,22 @@ class BackendTestCase(TestCase):
 
         self.assertEqual(1, len(self.registry.events))
         self.assertEqual(local_event, self.registry.events[0])
-        self.assertEqual([Task.remote_instance('task_1')], self.registry.events[0].tasks)
+        self.assertEqual([Task.remote_instance('task_1', use_routes=False)], self.registry.events[0].tasks)
 
     def test_update_local_event_no_event_from_backend(self):
         local_event = self.registry.create_local_event('app_1', 'event_1')
-        local_event.add_remote_task_name('task_1')
+        local_event.add_task(Task.remote_instance('task_1', use_routes=False))
 
         backend = self.backend_cls(self.registry)
         backend.update_local_event(local_event)
 
         self.assertEqual(1, len(self.registry.events))
         self.assertEqual(local_event, self.registry.events[0])
-        self.assertEqual([Task.remote_instance('task_1')], self.registry.events[0].tasks)
+        self.assertEqual([Task.remote_instance('task_1', use_routes=False)], self.registry.events[0].tasks)
 
     def test_sync_local_events_create_event(self):
         local_event = self.registry.create_local_event('app_1', 'event_1')
-        local_event.add_remote_task_name('task_1')
+        local_event.add_task(Task.local_instance('task_1', use_routes=False))
 
         backend = self.backend_cls(self.registry)
         backend.sync_local_events()
@@ -482,7 +469,7 @@ class BackendTestCase(TestCase):
     def test_sync_local_events_delete_event(self):
         local_event = Event.local_instance('app_1', 'event_1')
         self.local_events_from_backend.append(local_event)
-        local_event.add_remote_task_name('task_1')
+        local_event.add_task(Task.local_instance('task_1', use_routes=False))
 
         backend = self.backend_cls(self.registry)
         backend.sync_local_events()
@@ -498,7 +485,7 @@ class BackendTestCase(TestCase):
     def test_sync_remote_events_create_task(self):
         remote_event = self.registry.remote_event('app_3', 'event_3')
         self.remote_events_from_backend.append(remote_event)
-        local_task = remote_event.add_remote_task_name('task_1')
+        local_task = remote_event.add_task(Task.local_instance('task_1', use_routes=False))
 
         backend = self.backend_cls(self.registry)
         backend.sync_remote_events()
@@ -516,7 +503,9 @@ class BackendTestCase(TestCase):
         remote_event = self.registry.remote_event('app_3', 'event_3')
         remote_event_from_backend = Event.remote_instance('app_3', 'event_3')
         self.remote_events_from_backend.append(remote_event_from_backend)
-        local_task_from_backend = remote_event_from_backend.add_remote_task_name('app_1.task_1')
+        local_task_from_backend = remote_event_from_backend.add_task(
+            Task.local_instance('app_1.task_1', use_routes=False)
+        )
 
         backend = self.backend_cls(self.registry)
         backend.sync_remote_events()
@@ -534,8 +523,8 @@ class BackendTestCase(TestCase):
         remote_event = self.registry.remote_event('app_3', 'event_3')
         remote_event_from_backend = Event.remote_instance('app_3', 'event_3')
         self.remote_events_from_backend.append(remote_event_from_backend)
-        local_task = remote_event.add_remote_task_name('app_1.task_1', queue='new_queue')
-        remote_event_from_backend.add_remote_task_name('app_1.task_1', queue='old_queue')
+        local_task = remote_event.add_task(Task.local_instance('app_1.task_1', queue='new_queue'))
+        remote_event_from_backend.add_task(Task.local_instance('app_1.task_1', queue='old_queue'))
 
         backend = self.backend_cls(self.registry)
         backend.sync_remote_events()
