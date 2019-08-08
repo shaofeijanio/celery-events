@@ -20,20 +20,17 @@ class MyBackend(Backend):
     ...
 
 
-def get_broadcast_queue():
-    # Return queue name for broadcast task
-    ...
+BROADCAST_QUEUE = 'broadcast_queue'
 
 
-def get_task_name_queue(task_name):
-    # Return queue name for task_name
+def route(name, args, kwargs, options, task=None, **kw):
     ...
 
 
 app = App(
     backend_class=MyBackend,
-    get_broadcast_queue=get_broadcast_queue,
-    get_task_name_queue=get_task_name_queue
+    broadcast_queue=BROADCAST_QUEUE,
+    routes=[route]
 )
 ```
 
@@ -57,8 +54,8 @@ EVENT = app.registry.create_local_event('app_name', 'event_name', kwarg_keys=['a
 
 
 # Add tasks to event
-EVENT.add_c_task(handle_event_by_doing_a)
-EVENT.add_c_task(handle_event_by_doing_b)
+EVENT.add_local_c_task(handle_event_by_doing_a)
+EVENT.add_local_c_task(handle_event_by_doing_b)
 
 
 # Broadcast a event to trigger all tasks added to event
