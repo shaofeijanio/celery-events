@@ -36,9 +36,10 @@ class EventModel:
 
     def __new__(cls, *args, **kwargs):
         obj = super().__new__(cls)
-        app, is_remote, backend_obj = cls._pop_instance_kwargs(kwargs)
+        app, is_remote, is_backend, backend_obj = cls._pop_instance_kwargs(kwargs)
         obj.app = app
         obj.is_remote = is_remote
+        obj.is_backend = is_backend
         obj.backend_obj = backend_obj
         return obj
 
@@ -46,8 +47,9 @@ class EventModel:
     def _pop_instance_kwargs(cls, kwargs):
         app = kwargs.pop('app', None)
         is_remote = kwargs.pop('is_remote', False)
+        is_backend = kwargs.pop('is_backend', False)
         backend_obj = kwargs.pop('backend_obj', None)
-        return app, is_remote, backend_obj
+        return app, is_remote, is_backend, backend_obj
 
     @classmethod
     def local_instance(cls, *args, **kwargs):
@@ -60,6 +62,14 @@ class EventModel:
     @classmethod
     def remote_instance(cls, *args, **kwargs):
         kwargs['is_remote'] = True
+        instance = cls.__new__(cls, *args, **kwargs)
+        cls._pop_instance_kwargs(kwargs)
+        instance.__init__(*args, **kwargs)
+        return instance
+
+    @classmethod
+    def backend_instance(cls, *args, **kwargs):
+        kwargs['is_backend'] = True
         instance = cls.__new__(cls, *args, **kwargs)
         cls._pop_instance_kwargs(kwargs)
         instance.__init__(*args, **kwargs)
@@ -99,14 +109,18 @@ class Event(EventModel):
     def _get_or_create_task(self, name, queue):
         task = next((t for t in self.tasks if t.name == name), None)
         if task is None:
-            task = Task.local_instance(name=name, queue=queue, app=self.app)
+            if self.is_backend:
+                task = Task.backend_instance(name=name, queue=queue)
+            else:
+                task = Task.local_instance(name=name, queue=queue, app=self.app)
+
             self.tasks.append(task)
 
         return task
 
     def broadcast(self, now=False, **kwargs):
-        if self.is_remote:
-            raise RuntimeError('Cannot broadcast a remote event.')
+        if self.is_remote or self.is_backend:
+            raise RuntimeError('Cannot broadcast a remote or backend event.')
 
         self._check_kwargs(kwargs)
         broadcast_kwargs = {
@@ -139,7 +153,12 @@ class Task(EventModel):
     def __init__(self, name, queue=None):
         super().__init__()
         self.name = name
-        self.queue = queue or self.app.route(name)
+        if self.is_remote:
+            self.queue = queue
+        elif not self.is_backend:
+            self.queue = queue or self.app.route(name)
+        else:
+            self.queue = None
 
     def __eq__(self, other):
         return self.name == other.name
