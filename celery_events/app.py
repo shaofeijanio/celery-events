@@ -59,12 +59,16 @@ class Registry:
 
 class App:
 
-    def __init__(self, backend_class=None, broadcast_queue=None, routes=tuple()):
+    def __init__(self, backend_class=None, broadcast_queue=None, broadcast_task_base=None, routes=tuple()):
         if backend_class and not issubclass(backend_class, Backend):
             raise TypeError('backend_class is not a subclass of Backend.')
 
         self.backend_class = backend_class
-        self.broadcaster = Broadcaster(self, broadcast_queue or 'events_broadcast')
+        self.broadcaster = Broadcaster(
+            self,
+            broadcast_queue or 'events_broadcast',
+            broadcast_task_base=broadcast_task_base
+        )
         self.routes = routes
         self.registry = Registry(self)
 
