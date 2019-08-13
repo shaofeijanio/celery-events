@@ -37,10 +37,16 @@ class Registry:
 
         return event
 
-    def create_local_event(self, app_name, event_name, kwarg_keys=None):
+    def create_local_event(self, app_name, event_name, kwarg_keys=None, accept_any_kwarg_keys=False):
         event = self.event(app_name, event_name, local_only=True, raise_does_not_exist=False)
         if event is None:
-            event = Event.local_instance(app_name=app_name, event_name=event_name, kwarg_keys=kwarg_keys, app=self.app)
+            event = Event.local_instance(
+                app_name=app_name,
+                event_name=event_name,
+                kwarg_keys=kwarg_keys,
+                accept_any_kwarg_keys=accept_any_kwarg_keys,
+                app=self.app
+            )
             self.events.append(event)
 
         return event
